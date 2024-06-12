@@ -20,12 +20,7 @@ IF (EMBREE_TUTORIALS_GLFW)
 
   IF(NOT glfw3_FOUND)
     CMAKE_MINIMUM_REQUIRED(VERSION 3.14)
-    IF (NOT EMBREE_BUILD_GLFW_FROM_SOURCE)
-      MESSAGE("-- glfw3 installation not found. download and build from source")
-    ELSE()
-      MESSAGE("-- download and build glfw3 from source")
-    ENDIF()
-
+    MESSAGE("-- glfw3 installation not found. download and build from source")
 
     INCLUDE(FetchContent)
     SET(FETCHCONTENT_QUIET ON)
@@ -33,20 +28,15 @@ IF (EMBREE_TUTORIALS_GLFW)
     set(GLFW_BUILD_DOCS OFF CACHE INTERNAL "")
     set(GLFW_BUILD_EXAMPLES OFF CACHE INTERNAL "")
     set(GLFW_BUILD_TESTS OFF CACHE INTERNAL "")
-    set(EMBREE_PATCH_GLFW_SOURCE OFF CACHE INTERNAL "Applys an optional patch to GLFW.")
 
-    if (EMBREE_PATCH_GLFW_SOURCE)
-      # The patch command first resets the glfw repository to a clean state. That
-      # is because CMake wants to apply the patch again when CMake needs to
-      # reconfigure, which fails.
-      set(patch_command git reset --hard && git apply -v "${CMAKE_CURRENT_SOURCE_DIR}/common/glfw/glfw.patch")
-    endif()
-
+    # The patch command first resets the glfw repository to a clean state. That
+    # is because CMake wants to apply the patch again when CMake needs to
+    # reconfigure, which fails.
     FetchContent_Declare(
       glfw
       GIT_REPOSITORY https://github.com/glfw/glfw
       GIT_TAG 3.3.8
-      PATCH_COMMAND ${patch_command}
+      PATCH_COMMAND git reset --hard && git apply -v ${CMAKE_CURRENT_SOURCE_DIR}/common/glfw/glfw.patch
     )
 
     FetchContent_GetProperties(glfw)
@@ -80,40 +70,6 @@ ENDIF()
 
 ADD_SUBDIRECTORY(common)
 
-ADD_SUBDIRECTORY(embree_info)
-ADD_SUBDIRECTORY(verify)
-ADD_SUBDIRECTORY(triangle_geometry)
-ADD_SUBDIRECTORY(dynamic_scene)
-ADD_SUBDIRECTORY(voronoi)
-ADD_SUBDIRECTORY(closest_point)
-ADD_SUBDIRECTORY(user_geometry)
-ADD_SUBDIRECTORY(viewer)
-ADD_SUBDIRECTORY(instanced_geometry)
-ADD_SUBDIRECTORY(multi_instanced_geometry)
-ADD_SUBDIRECTORY(intersection_filter)
 ADD_SUBDIRECTORY(pathtracer)
-ADD_SUBDIRECTORY(hair_geometry)
-ADD_SUBDIRECTORY(subdivision_geometry)
-ADD_SUBDIRECTORY(displacement_geometry)
-ADD_SUBDIRECTORY(grid_geometry)
-ADD_SUBDIRECTORY(bvh_builder)
-ADD_SUBDIRECTORY(lazy_geometry)
-ADD_SUBDIRECTORY(bvh_access)
-ADD_SUBDIRECTORY(quaternion_motion_blur)
-ADD_SUBDIRECTORY(motion_blur_geometry)
-ADD_SUBDIRECTORY(interpolation)
-ADD_SUBDIRECTORY(curve_geometry)
-ADD_SUBDIRECTORY(point_geometry)
-ADD_SUBDIRECTORY(buildbench)
-ADD_SUBDIRECTORY(convert)
-ADD_SUBDIRECTORY(collide)
-ADD_SUBDIRECTORY(next_hit)
-ADD_SUBDIRECTORY(multiscene_geometry)
-ADD_SUBDIRECTORY(ray_mask)
-ADD_SUBDIRECTORY(forest)
-
-ADD_SUBDIRECTORY(embree_tests)
-
-ADD_SUBDIRECTORY(minimal)
 
 ENDIF()

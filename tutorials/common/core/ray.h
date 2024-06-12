@@ -19,6 +19,7 @@
 #include "../../../common/math/affinespace.h"
 
 #include "../../../common/simd/simd.h"
+const unsigned int BUFFER_SIZE = 512u;
 
   /*! Ray structure. */
   struct __aligned(16) Ray
@@ -28,16 +29,22 @@
 
     /*! Constructs a ray from origin, direction, and ray segment. Near
      *  has to be smaller than far. */
-    __forceinline Ray(const embree::Vec3fa& org, 
-                      const embree::Vec3fa& dir, 
-                      float tnear = 0.0f,
-                      float tfar = embree::inf, 
-                      float time = 0.0f, 
-                      int mask = -1,
-                      unsigned int geomID = RTC_INVALID_GEOMETRY_ID, 
-                      unsigned int primID = RTC_INVALID_GEOMETRY_ID)
-      : org(org,tnear), dir(dir,time), tfar(tfar), mask(mask), primID(primID), geomID(geomID)
+    __forceinline Ray(const embree::Vec3fa& org,
+      const embree::Vec3fa& dir,
+      float tnear = 0.0f,
+      float tfar = embree::inf,
+      float time = 0.0f,
+      int mask = -1,
+      unsigned int geomID = RTC_INVALID_GEOMETRY_ID,
+      unsigned int primID = RTC_INVALID_GEOMETRY_ID)
+      : org(org, tnear), dir(dir, time), tfar(tfar), mask(mask), tail(0), primID(primID), geomID(geomID)
     {
+      for (size_t i = 0; i < BUFFER_SIZE; i++)
+      {
+        tfars[i] = embree::inf;
+        colors[i] = embree::Vec3ff(0.0f);
+        alpha[i] = 1.0f;
+      }
       instID[0] = RTC_INVALID_GEOMETRY_ID;
 #if defined(RTC_GEOMETRY_INSTANCE_ARRAY)
       instPrimID[0] = RTC_INVALID_GEOMETRY_ID;
@@ -49,24 +56,26 @@
 
   public:
     embree::Vec3ff org;       //!< Ray origin + tnear
-    //float tnear;              //!< Start of ray segment
-    embree::Vec3ff dir;        //!< Ray direction + tfar
-    //float time;               //!< Time of this ray for motion blur.
-    float tfar;               //!< End of ray segment
+    //float tnear;            //!< Start of ray segment
+    embree::Vec3ff dir;       //!< Ray direction + tfar
+    //float time;             //!< Time of this ray for motion blur.
+    float tfar;               //!< hit ray pos
     unsigned int mask;        //!< used to mask out objects during traversal
     unsigned int id;          //!< ray ID
     unsigned int flags;       //!< ray flags
 
   public:
-    embree::Vec3f Ng;         //!< Not normalized geometry normal
-    float u;                  //!< Barycentric u coordinate of hit
-    float v;                  //!< Barycentric v coordinate of hit
-    unsigned int primID;           //!< primitive ID
-    unsigned int geomID;           //!< geometry ID
-    unsigned int instID[RTC_MAX_INSTANCE_LEVEL_COUNT];           //!< instance ID
+    embree::Vec3f Ng;                                   //!< Not normalized geometry normal
+    unsigned int tail;                                  //!< tail number
+    unsigned int primID;                                //!< primitive ID
+    unsigned int geomID;                                //!< geometry ID
+    unsigned int instID[RTC_MAX_INSTANCE_LEVEL_COUNT];  //!< instance ID
 #if defined(RTC_GEOMETRY_INSTANCE_ARRAY)
-    unsigned int instPrimID[RTC_MAX_INSTANCE_LEVEL_COUNT];           //!< instance primitive ID
+    unsigned int instPrimID[RTC_MAX_INSTANCE_LEVEL_COUNT]; //!< instance primitive ID
 #endif
+    float tfars[BUFFER_SIZE];           //!< hit ray pos
+    embree::Vec3ff colors[BUFFER_SIZE]; //!< hit ray colors
+    float alpha[BUFFER_SIZE];           //!< hit ray alpha
 
     __forceinline float &tnear() { return org.w; };
     __forceinline float &time()  { return dir.w; };
@@ -126,7 +135,7 @@ __forceinline RTCRay* RTCRay1_(Ray& ray) {
       cout << "instPrimID" << i << " = " << ray.instPrimID[i] << ", ";
 #endif
         
-    return cout << "geomID = " << ray.geomID << ", primID = " << ray.primID <<  ", " << "u = " << ray.u <<  ", v = " << ray.v << ", Ng = " << ray.Ng << " }";
+    return cout << "geomID = " << ray.geomID << ", tail = " << ray.tail <<  ", " << "alpha = " << ray.alpha[ray.tail]  << ", colors = " << ray.colors[ray.tail] << " }";
   }
 
 /*! ray query context passed to intersect/occluded calls */

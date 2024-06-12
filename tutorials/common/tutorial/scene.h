@@ -5,6 +5,7 @@
 
 #include "../default.h"
 #include "../scenegraph/scenegraph.h"
+#include <openvdb/openvdb.h>
 
 namespace embree
 {
@@ -25,5 +26,6 @@ namespace embree
     std::vector<Ref<SceneGraph::MaterialNode>> materials; //!< list of materials
     std::vector<Ref<SceneGraph::Node> > geometries;   //!< list of geometries
     std::vector<Ref<SceneGraph::LightNode>> lights;       //!< list of lights
+    openvdb::GridBase::ConstPtr gridPtr = nullptr;
   };
 }

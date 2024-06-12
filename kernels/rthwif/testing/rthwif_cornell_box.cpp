@@ -64,7 +64,7 @@ catch (std::exception const& e) {
   throw;
 }
 
-std::vector<unsigned char> readFile(const std::string& fileName) try
+std::vector<char> readFile(const std::string& fileName) try
 {
   std::fstream file;
   file.exceptions (std::fstream::failbit | std::fstream::badbit);
@@ -72,9 +72,9 @@ std::vector<unsigned char> readFile(const std::string& fileName) try
 
   file.seekg (0, std::ios::end);
   std::streampos size = file.tellg();
-  std::vector<unsigned char> data(size);
+  std::vector<char> data(size);
   file.seekg (0, std::ios::beg);
-  file.read ((char*)data.data(), size);
+  file.read (data.data(), size);
   file.close();
 
   return data;
@@ -84,21 +84,11 @@ catch (std::exception const& e) {
   throw;
 }
 
-size_t compareTga(const std::string& fileNameA, const std::string& fileNameB)
+bool compareTga(const std::string& fileNameA, const std::string& fileNameB)
 {
-  const std::vector<unsigned char> dataA = readFile(fileNameA);
-  const std::vector<unsigned char> dataB = readFile(fileNameB);
-  if (dataA.size() != dataB.size())
-    return false;
-
-  size_t diff = 0;
-  for (int i=0; i<dataA.size(); i++)
-  {
-    if (std::abs((int)dataA[i] - (int)dataB[i]) == 1) diff++;
-    if (std::abs((int)dataA[i] - (int)dataB[i]) == 2) diff+=4;
-    if (std::abs((int)dataA[i] - (int)dataB[i]) >= 3) diff+=100;
-  }
-  return diff;
+  const std::vector<char> dataA = readFile(fileNameA);
+  const std::vector<char> dataB = readFile(fileNameB);
+  return dataA == dataB;
 }
 
 /* Properly allocates an acceleration structure buffer using ze_raytracing_mem_alloc_ext_desc_t property. */
@@ -427,12 +417,12 @@ void render(unsigned int x, unsigned int y, void* bvh, unsigned int* pixels, uns
     pixels[y*width+x] = 0;
     return;
   }
-
+  
   /* fixed camera */
-  sycl::float3 vx(-1.f, -0.f, -0.f);
-  sycl::float3 vy(-0.f, -1.f, -0.f);
-  sycl::float3 vz(32.f, 32.f, 95.6379f);
-  sycl::float3 p(278.f, 273.f, -800.f);
+  sycl::float3 vx(-1, -0, -0);
+  sycl::float3 vy(-0, -1, -0);
+  sycl::float3 vz(32, 32, 95.6379f);
+  sycl::float3 p(278, 273, -800);
 
   /* compute primary ray */
   intel_ray_desc_t ray;
@@ -465,11 +455,11 @@ void render(unsigned int x, unsigned int y, void* bvh, unsigned int* pixels, uns
   pixels[y*width+x] = (b << 16) + (g << 8) + r;
 }
 
-int main(int argc, char* argv[]) try
+int main(int argc, char* argv[])
 {
   /* use can specify reference image to compare against */
 #if defined(EMBREE_SYCL_L0_RTAS_BUILDER)
-  ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::LEVEL_ZERO;
+  ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::AUTO;
 #else
   ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::INTERNAL;
 #endif
@@ -515,7 +505,6 @@ int main(int argc, char* argv[]) try
     return 1;
   }
 
-  ze_result_t result = ZE_RESULT_SUCCESS;
   sycl::platform platform = device.get_platform();
   ze_driver_handle_t hDriver = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(platform);
 
@@ -524,7 +513,7 @@ int main(int argc, char* argv[]) try
   {
     uint32_t count = 0;
     std::vector<ze_driver_extension_properties_t> extensions;
-    result = ZeWrapper::zeDriverGetExtensionProperties(hDriver,&count,extensions.data());
+    ze_result_t result = ZeWrapper::zeDriverGetExtensionProperties(hDriver,&count,extensions.data());
     if (result != ZE_RESULT_SUCCESS)
       throw std::runtime_error("zeDriverGetExtensionProperties failed");
     
@@ -541,19 +530,13 @@ int main(int argc, char* argv[]) try
     }
 
     if (ze_rtas_builder)
-      result = ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::AUTO);
+      ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::AUTO);
     else
-      result = ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::INTERNAL);
+      ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::INTERNAL);
   }
   else
-    result = ZeWrapper::initRTASBuilder(hDriver,rtas_build_mode);
+    ZeWrapper::initRTASBuilder(hDriver,rtas_build_mode);
 
-  if (result == ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE)
-    throw std::runtime_error("cannot load ZE_experimental_rtas_builder extension");
-  
-  if (result != ZE_RESULT_SUCCESS)
-    throw std::runtime_error("cannot initialize ZE_experimental_rtas_builder extension");
-  
   if (ZeWrapper::rtas_builder == ZeWrapper::INTERNAL)
     std::cout << "using internal RTAS builder" << std::endl;
   else
@@ -615,16 +598,10 @@ int main(int argc, char* argv[]) try
   if (!reference_img) return 0;
 
   /* compare to reference image */
-  const size_t err = compareTga("cornell_box.tga", "cornell_box_reference.tga");
-  std::cout << "difference to reference image is " << err << std::endl;
-  const bool ok = err < 32;
+  const bool ok = compareTga("cornell_box.tga", reference_img);
   std::cout << "cornell_box ";
   if (ok) std::cout << "[PASSED]" << std::endl;
   else    std::cout << "[FAILED]" << std::endl;
 
   return ok ? 0 : 1;
-}
-catch (std::runtime_error e) {
-  std::cerr << "std::runtime_error: " << e.what() << std::endl;
-  return 1;
 }

@@ -18,7 +18,6 @@
 #include "../imgui/imgui.h"
 #include "../imgui/backends/imgui_impl_glfw.h"
 #include "../imgui/backends/imgui_impl_opengl2.h"
-
 #endif
 
 namespace embree
@@ -68,7 +67,7 @@ namespace embree
   class TutorialApplication : public Application
   {
   public:
-    TutorialApplication (const std::string& tutorialName, const int features, int width = 512, int height = 512);
+    TutorialApplication (const std::string& tutorialName, const int features, int width = 1024, int height = 512);
     virtual ~TutorialApplication();
 
   private:

@@ -34,15 +34,6 @@ namespace embree
     unsigned _reserved_mbz : 12;
     uint32_t maxBVHLevels;               // the maximal number of supported instancing levels (0->8, 1->1, 2->2, ...)
     Flags flags;                         // per context control flags
-
-    static inline size_t GetDispatchGlobalsSize()
-    {
-      size_t maxBVHLevels = RTC_MAX_INSTANCE_LEVEL_COUNT+1;
-      size_t rtstack_bytes = (64+maxBVHLevels*(64+32)+63)&-64;
-      size_t num_rtstacks = 1<<17; // this is sufficiently large also for PVC
-      size_t dispatchGlobalSize = 128+num_rtstacks*rtstack_bytes;
-      return dispatchGlobalSize;
-    }
   };
 
   void* zeRTASInitExp(sycl::device device, sycl::context context)
@@ -52,7 +43,12 @@ namespace embree
 
 #if defined(EMBREE_SYCL_ALLOC_DISPATCH_GLOBALS)
 
-    size_t dispatchGlobalSize = DispatchGlobals::GetDispatchGlobalsSize();
+    size_t maxBVHLevels = RTC_MAX_INSTANCE_LEVEL_COUNT+1;
+
+    size_t rtstack_bytes = (64+maxBVHLevels*(64+32)+63)&-64;
+    size_t num_rtstacks = 1<<17; // this is sufficiently large also for PVC
+    size_t dispatchGlobalSize = 128+num_rtstacks*rtstack_bytes;
+
     void* dispatchGlobalsPtr = rthwifAllocAccelBuffer(nullptr,dispatchGlobalSize,device,context);
     memset(dispatchGlobalsPtr, 0, dispatchGlobalSize);
 
@@ -63,7 +59,7 @@ namespace embree
     dg->numDSSRTStacks = 0;
     dg->syncRayQueryCount = 0;
     dg->_reserved_mbz = 0;
-    dg->maxBVHLevels = RTC_MAX_INSTANCE_LEVEL_COUNT+1;
+    dg->maxBVHLevels = maxBVHLevels;
     dg->flags = DEPTH_TEST_LESS_EQUAL;
 
     return dispatchGlobalsPtr;
@@ -75,11 +71,10 @@ namespace embree
 #endif
   }
 
-  void rthwifCleanup(Device* embree_device, void* dispatchGlobalsPtr, sycl::context context)
+  void rthwifCleanup(void* dispatchGlobalsPtr, sycl::context context)
   {
 #if defined(EMBREE_SYCL_ALLOC_DISPATCH_GLOBALS)
-    size_t dispatchGlobalSize = DispatchGlobals::GetDispatchGlobalsSize();
-    rthwifFreeAccelBuffer(embree_device, dispatchGlobalsPtr, dispatchGlobalSize, context);
+    rthwifFreeAccelBuffer(nullptr, dispatchGlobalsPtr, context);
 #endif
   }
 
@@ -116,11 +111,6 @@ namespace embree
     if (!ze_extension_ray_tracing)
       return -1;
 
-#if defined(EMBREE_SYCL_L0_RTAS_BUILDER)
-    if (!ze_rtas_builder)
-      return -1;
-#endif
-
     /* check if ray queries are supported */
     ze_device_handle_t hDevice = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(sycl_device);
     
@@ -141,6 +131,10 @@ namespace embree
     const bool rayQuerySupported = raytracing_properties.flags & ZE_DEVICE_RAYTRACING_EXT_FLAG_RAYQUERY;
     if (!rayQuerySupported)
       return -1;
+
+    (void)ze_rtas_builder;
+    //if (!ze_rtas_builder) // for now we do not need the rtas extension yet!
+    //  return -1;
 
     return sycl_device.get_info<sycl::info::device::max_compute_units>();
   }

@@ -9,14 +9,6 @@
 #include <unordered_map>
 #include <iterator>
 
-#if defined(EMBREE_SYCL_TUTORIAL)
-#  define NAME "build_bench_sycl"
-#  define FEATURES FEATURE_RTCORE | FEATURE_SYCL
-#else
-#  define NAME "build_bench"
-#  define FEATURES FEATURE_RTCORE
-#endif
-
 RTC_NAMESPACE_USE;
 
 namespace embree
@@ -26,7 +18,7 @@ namespace embree
   struct Tutorial : public SceneLoadingTutorialApplication
   {
     Tutorial()
-      : SceneLoadingTutorialApplication(NAME,FEATURES)
+      : SceneLoadingTutorialApplication("build_bench",FEATURE_RTCORE)
     {
       interactive = false;
 

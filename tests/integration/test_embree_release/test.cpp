@@ -102,7 +102,7 @@ TEST_CASE("Minimal test", "[minimal]")
 
   rtcReleaseScene(scene);
   rtcReleaseDevice(device);
-
+  
   REQUIRE(true);
 }
 

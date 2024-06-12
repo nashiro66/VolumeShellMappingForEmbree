@@ -6,8 +6,8 @@ IF (EMBREE_SYCL_RT_SIMULATION)
 ENDIF()
 
 IF (EMBREE_SYCL_SUPPORT)
-  ADD_SUBDIRECTORY(level_zero)
   ADD_SUBDIRECTORY(rthwif)
+  ADD_SUBDIRECTORY(level_zero)
 ENDIF()
 
 IF (EMBREE_CONFIG)
@@ -341,7 +341,7 @@ ENDIF()
 
 TARGET_LINK_LIBRARIES(embree PRIVATE ${EMBREE_LIBRARIES} sys math simd lexers tasking)
 IF (EMBREE_SYCL_SUPPORT)
-  TARGET_LINK_LIBRARIES(embree PRIVATE ${SYCL_LIB_NAME} ze_wrapper PUBLIC embree_sycl)
+  TARGET_LINK_LIBRARIES(embree PRIVATE embree_rthwif ${SYCL_LIB_NAME} ze_wrapper PUBLIC embree_sycl)
 ENDIF()
 
 #TARGET_LINK_LIBRARIES(embree PRIVATE ${EMBREE_LIBRARIES} sys math simd lexers tasking ${CMAKE_LINK_FLAGS_SYCL})  # FIXME: enable this line

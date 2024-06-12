@@ -25,6 +25,14 @@
 #include "../scenegraph/materials.h"
 #undef CPPTUTORIAL
 
+#include "../core/ray.h"
+#include <openvdb/Grid.h>
+#include <openvdb/math/Ray.h>
+
+const unsigned int MAX_ITERATIONS = 10u;
+const float eps = 1e-7f;
+const float eeps = 1e-3f;
+
 namespace embree
 {
 #endif
@@ -61,7 +69,8 @@ namespace embree
 #endif
   };
 
-  enum ISPCType { TRIANGLE_MESH, SUBDIV_MESH, CURVES, INSTANCE, INSTANCE_ARRAY, GROUP, QUAD_MESH, GRID_MESH, POINTS };
+  enum ISPCType { TRIANGLE_MESH, SUBDIV_MESH, CURVES, INSTANCE, INSTANCE_ARRAY, GROUP, QUAD_MESH, GRID_MESH, POINTS, PRISM
+  };
 
   struct ISPCGeometry
   {
@@ -289,7 +298,36 @@ namespace embree
     unsigned int numGrids;
   };
 
-  
+  // one prism
+  struct ISPCPrism
+  {
+#if !defined(ISPC)
+    ALIGNED_STRUCT_USM_(16);
+
+    ISPCPrism(RTCDevice device, bool hasNormals, bool hasTexcoords);
+    ISPCPrism(RTCDevice device, TutorialScene* scene_in, Ref<SceneGraph::PrismMeshNode> in);
+    ~ISPCPrism();
+
+    void commit();
+
+  private:
+    ISPCPrism(const ISPCPrism& other) DELETED; // do not implement
+    ISPCPrism& operator= (const ISPCPrism& other) DELETED; // do not implement
+
+  public:
+#endif
+
+    ISPCGeometry geom;
+    Vec3fa* positions;     //!< vertex position array
+    Vec3fa* normals;       //!< vertex normal array
+    Vec2f* texcoords;       //!< vertex texcoord array
+    ISPCTriangle* triangles;//!< list of triangles base and offset
+
+    unsigned int numVertices;
+    unsigned int numTriangles;
+    openvdb::FloatGrid::ConstPtr floatGridPtr;
+  };
+
   struct ISPCInstance
   {
 #if !defined(ISPC)
@@ -395,12 +433,12 @@ namespace embree
 #endif
     RTCScene scene;
     ISPCGeometry** geometries;   //!< list of geometries
-    ISPCMaterial** materials;     //!< material list
-    unsigned int numGeometries;           //!< number of geometries
-    unsigned int numMaterials;            //!< number of materials
+    ISPCMaterial** materials;    //!< material list
+    unsigned int numGeometries;  //!< number of geometries
+    unsigned int numMaterials;   //!< number of materials
     
     Light** lights;              //!< list of lights
-    unsigned int numLights;               //!< number of lights
+    unsigned int numLights;      //!< number of lights
     void* tutorialScene;
   };
 

@@ -39,8 +39,8 @@ IF (EMBREE_SYCL_SUPPORT AND EMBREE_INSTALL_DEPENDENCIES)
       "${DPCPP_COMPILER_DIR}/../bin/sycl?.dll")
     INSTALL(FILES ${LIB_SYCL_DLL_FILES} DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
     
-    INSTALL(FILES "${DPCPP_COMPILER_DIR}/pi_level_zero.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
-    INSTALL(FILES "${DPCPP_COMPILER_DIR}/win_proxy_loader.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib OPTIONAL)
+    INSTALL(FILES "${DPCPP_COMPILER_DIR}/../bin/pi_level_zero.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
+    INSTALL(FILES "${DPCPP_COMPILER_DIR}/../bin/win_proxy_loader.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib OPTIONAL)
 
     IF (EXISTS "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/svml_dispmd.dll")
       INSTALL(FILES "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/svml_dispmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
@@ -48,12 +48,9 @@ IF (EMBREE_SYCL_SUPPORT AND EMBREE_INSTALL_DEPENDENCIES)
     IF (EXISTS "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/libmmd.dll")
       INSTALL(FILES "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/libmmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
     ENDIF()
-    IF (EXISTS "${DPCPP_COMPILER_DIR}/libmmd.dll")
-      INSTALL(FILES "${DPCPP_COMPILER_DIR}/libmmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
-    ENDIF()
-
-    IF (EXISTS "${DPCPP_COMPILER_DIR}/pi_win_proxy_loader.dll")
-      INSTALL(FILES "${DPCPP_COMPILER_DIR}/pi_win_proxy_loader.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
+    
+    IF (EXISTS "${DPCPP_COMPILER_DIR}/../bin/pi_win_proxy_loader.dll")
+      INSTALL(FILES "${DPCPP_COMPILER_DIR}/../bin/pi_win_proxy_loader.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
     ENDIF()
   ELSE()
     
@@ -95,9 +92,6 @@ IF (WIN32)
     GET_FILENAME_COMPONENT(DPCPP_COMPILER_DIR ${CMAKE_CXX_COMPILER} PATH)
     IF (EXISTS "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/libmmd.dll")
       INSTALL(FILES "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/libmmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
-    ENDIF()
-    IF (EXISTS "${DPCPP_COMPILER_DIR}//libmmd.dll")
-      INSTALL(FILES "${DPCPP_COMPILER_DIR}/libmmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
     ENDIF()
     IF (EXISTS "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/svml_dispmd.dll")
       INSTALL(FILES "${DPCPP_COMPILER_DIR}/../redist/intel64_win/compiler/svml_dispmd.dll" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib)
@@ -288,6 +282,7 @@ SET(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE.txt")
 
 # Windows specific settings
 IF(WIN32)
+
   IF (CMAKE_SIZEOF_VOID_P EQUAL 8)
     SET(ARCH x64)
     SET(CPACK_PACKAGE_NAME "${CPACK_PACKAGE_NAME} x64")
@@ -299,7 +294,19 @@ IF(WIN32)
   SET(CPACK_GENERATOR ZIP)
   SET(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.${ARCH}.windows")
   SET(PACKAGE_BASE_NAME "${CPACK_PACKAGE_FILE_NAME}")
-  SET(PACKAGE_EXT "zip")
+  #SET(CPACK_MONOLITHIC_INSTALL 1)
+  IF (EMBREE_TESTING_PACKAGE)
+    SET(PACKAGE_SCRIPT "${PROJECT_SOURCE_DIR}/scripts/package_win.bat")
+    ADD_TEST(NAME "BuildPackage" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" COMMAND ${PACKAGE_SCRIPT} ${CMAKE_BUILD_TYPE} "${PACKAGE_BASE_NAME}" "${ARCH}")
+  ENDIF()
+
+  add_custom_target(
+    post_package "${PROJECT_SOURCE_DIR}/scripts/package_post_build_win.bat" "${PACKAGE_BASE_NAME}" "${EMBREE_SIGN_FILE}"
+  )
+
+  add_custom_target(
+    test_package "${PROJECT_SOURCE_DIR}/scripts/package_test_win.bat" "${PACKAGE_BASE_NAME}"
+  )
 
 # MacOSX specific settings
 ELSEIF(APPLE)
@@ -308,52 +315,41 @@ ELSEIF(APPLE)
   SET(CPACK_RESOURCE_FILE_README "${PROJECT_BINARY_DIR}/README.txt")
 
   SET(CPACK_GENERATOR ZIP)
-  IF (EMBREE_ARM)
-    SET(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.arm64.macosx")
-  ELSE()
-    SET(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.x86_64.macosx")
-  ENDIF()
   SET(PACKAGE_BASE_NAME "${CPACK_PACKAGE_FILE_NAME}")
-  SET(PACKAGE_EXT "zip")
+  SET(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.x86_64.macosx")
+  #SET(CPACK_MONOLITHIC_INSTALL 1)
+  IF (EMBREE_TESTING_PACKAGE)
+    ADD_TEST(NAME "BuildPackage" WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" COMMAND "${PROJECT_SOURCE_DIR}/scripts/package_macosx.sh" ${CMAKE_BUILD_TYPE} "${PACKAGE_BASE_NAME}" "${EMBREE_SIGN_FILE}")
+  ENDIF()
 
   add_custom_target(
-    post_package_notarize "${PROJECT_SOURCE_DIR}/scripts/package_post_build_notarize_macosx.sh" ${PACKAGE_BASE_NAME} ${EMBREE_SIGN_FILE}
+    post_package "${PROJECT_SOURCE_DIR}/scripts/package_post_build_macosx.sh" ${PACKAGE_BASE_NAME} ${EMBREE_SIGN_FILE}
+  )
+
+  add_custom_target(
+    test_package "${PROJECT_SOURCE_DIR}/scripts/package_test_macosx.sh" ${PACKAGE_BASE_NAME}
   )
 
 # Linux specific settings
 ELSE()
+
   SET(CPACK_GENERATOR TGZ)
   SET(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.x86_64.linux")
   SET(PACKAGE_BASE_NAME "${CPACK_PACKAGE_FILE_NAME}")
-  SET(PACKAGE_EXT "tar.gz")
   IF (EMBREE_SYCL_SUPPORT)
     SET(EMBREE_VERSION_SYCL_SUFFIX ".sycl")
   ENDIF()
+
+  add_custom_target(
+    post_package "${PROJECT_SOURCE_DIR}/scripts/package_post_build_linux.sh" ${PACKAGE_BASE_NAME}
+  )
+
+  add_custom_target(
+    test_package "${PROJECT_SOURCE_DIR}/scripts/package_test_linux.sh" ${PACKAGE_BASE_NAME}
+  )
+
 ENDIF()
 
-
-add_custom_target(
-  build ${CMAKE_COMMAND} --build . --config ${CMAKE_BUILD_TYPE} --target package -j8
-  COMMAND ${CMAKE_COMMAND} -DPACKAGE_BASENAME=${PACKAGE_BASE_NAME} -DPACKAGE_EXT=${PACKAGE_EXT} -P ${PROJECT_SOURCE_DIR}/scripts/package_build.cmake
-)
-
-add_custom_target(
-  test_package ${CMAKE_COMMAND} -DWHAT="UNPACK" -DPACKAGE_BASENAME=${PACKAGE_BASE_NAME} -DPACKAGE_EXT=${PACKAGE_EXT} -P ${PROJECT_SOURCE_DIR}/scripts/package_test.cmake
-  COMMAND cd embree_install/testing && ${CMAKE_COMMAND} -B build -DEMBREE_TESTING_INTENSITY=${EMBREE_TESTING_INTENSITY}
-  COMMAND ctest --test-dir ${CMAKE_CURRENT_BINARY_DIR}/embree_install/testing/build -VV -C ${CMAKE_BUILD_TYPE} --output-log ctest.output 
-  COMMAND ${CMAKE_COMMAND} -DWHAT="CHECK" -P ${PROJECT_SOURCE_DIR}/scripts/package_test.cmake
-)
-
-
-if(WIN32)
-  set(INTEGRATE_BINARY "./build/Release/test.exe")
-else()
-  set(INTEGRATE_BINARY "./build/test")
-endif()
-
-add_custom_target(
-  test_integration ${CMAKE_COMMAND} -DWHAT="UNPACK" -DPACKAGE_BASENAME=${PACKAGE_BASE_NAME} -DPACKAGE_EXT=${PACKAGE_EXT} -P ${PROJECT_SOURCE_DIR}/scripts/package_test.cmake 
-  COMMAND cd ${PROJECT_SOURCE_DIR}/tests/integration/test_embree_release && ${CMAKE_COMMAND} -B build --preset ${EMBREE_TESTING_INTEGRATION_PRESET} -Dembree_DIR="${CMAKE_CURRENT_BINARY_DIR}/embree_install/lib/cmake/embree-${EMBREE_VERSION}"
-  COMMAND cd ${PROJECT_SOURCE_DIR}/tests/integration/test_embree_release && ${CMAKE_COMMAND} --build build --config Release
-  COMMAND cd ${PROJECT_SOURCE_DIR}/tests/integration/test_embree_release && ${INTEGRATE_BINARY}
-)
+IF (EMBREE_TESTING_PACKAGE)
+  SET_TESTS_PROPERTIES(BuildPackage PROPERTIES TIMEOUT 1200)
+ENDIF()

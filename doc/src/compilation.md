@@ -17,8 +17,8 @@ C++11. Embree is tested with the following compilers:
 
 Linux
 
-  - Intel® oneAPI DPC++/C++ Compiler 2024.0.2
-  - oneAPI DPC++/C++ Compiler 2023-10-26
+  - Intel® oneAPI DPC++/C++ Compiler 2023.1.0
+  - oneAPI DPC++/C++ Compiler 2023-09-22
   - Clang 5.0.0
   - Clang 4.0.0
   - GCC 10.0.1 (Fedora 32) AVX512 support
@@ -26,15 +26,21 @@ Linux
   - GCC  7.3.1 (Fedora 27) AVX2 support
   - GCC  7.3.1 (Fedora 26) AVX2 support
   - GCC  6.4.1 (Fedora 25) AVX2 support
-  - Intel® Implicit SPMD Program Compiler 1.22.0
+  - Intel® Implicit SPMD Program Compiler 1.21.0
 
-macOS x86_64
+macOS x86
 
-  - Apple Clang 15
+  - Intel® C++ Classic Compiler 2023.1.0
+  - Apple Clang 12.0.5 (macOS 11.7.1)
 
-macOS Arm64
+macOS M1
 
-  - Apple Clang 14
+  - Apple Clang 12.0.5 (macOS 11.7.1)
+
+IMPORTANT: Unfortunatlly, latest version of the Intel® oneAPI DPC++/C++
+Compiler (2023.2.1), has a bug that doesn't allow Embree to run correctly with
+ISAs >= AVX2. Please wait for 2024.0.0, which will be released soon after
+Embree 4.3.0.
 
 Embree supports using the Intel® Threading Building Blocks (TBB) as the
 tasking system. For performance and flexibility reasons we recommend
@@ -134,7 +140,7 @@ The "oneAPI DPC++ Compiler" is more up-to-date than the "Intel(R) oneAPI
 DPC++/C++ Compiler" but less stable. The current tested version of the "oneAPI
 DPC++ compiler is
 
-  - [oneAPI DPC++ Compiler 2023-10-26](https://github.com/intel/llvm/releases/tag/nightly-2023-10-26)
+  - [oneAPI DPC++ Compiler 2023-09-25](https://github.com/intel/llvm/releases/tag/nightly-2023-09-22)
   
 The compiler can be downloaded and simply extracted. The oneAPI DPC++ compiler
 can be set up executing the following commands in a Linux (bash) shell:
@@ -169,10 +175,15 @@ Alternatively, you can download and run the installer of the
 
  - [Intel(R) oneAPI DPC++/C++ Compiler](https://www.intel.com/content/www/us/en/developer/articles/tool/oneapi-standalone-components.html#dpcpp-cpp).
 
+IMPORTANT: Currently only the latest version of this compiler can be found
+(2023.2.1), which unfornunatelly has a bug that doesn't allow Embree to run
+correctly with ISAs >= AVX2. Please wait for 2024.0.0, which will be released
+soon after Embree 4.3.0.
+
 After installation, you can set up the compiler by sourcing the
 `vars.sh` script in the `env` directory of the compiler install directory, for example,
 
-    source /opt/intel/oneAPI/compiler/latest/env/vars.sh
+    source /opt/intel/oneAPI/compiler/2023.0.0/env/vars.sh
 
 This script will put the `icpx` and `icx` compiler executables from the
 Intel(R) oneAPI DPC++/C++ Compiler in your path.
@@ -206,18 +217,34 @@ your Intel Xe HPG/HPC GPUs from here
 the driver installation instructions for your graphics card and
 operating system.
 
+We tested Embree with the latest GPGPU driver Devel Release from
+20220809. The Intel(R) Graphics Compute Runtime for oneAPI Level Zero
+and OpenCL(TM) Driver from that release is too old for Embree to work
+properly. Thus if no newer version of the GPGPU driver is available,
+you need to additionally install the latest compute runtime from here
+[23.09.25812.14](https://github.com/intel/compute-runtime/releases/tag/23.09.25812.14).
+
+Unfortunately, these compute runtime packages are only available for
+Ubuntu 22.04. You can also install a newer version of the compute
+runtime if available.
+
 
 Windows
 -------
-
+        
 Embree is tested using the following compilers under Windows:
 
-  - Intel® oneAPI DPC++/C++ Compiler 2024.0.2
-  - oneAPI DPC++/C++ Compiler 2023-10-26
+  - Intel® oneAPI DPC++/C++ Compiler 2023.1.0
+  - oneAPI DPC++/C++ Compiler 2023-09-22
   - Visual Studio 2022
   - Visual Studio 2019
   - Visual Studio 2017
-  - Intel® Implicit SPMD Program Compiler 1.22.0
+  - Intel® Implicit SPMD Program Compiler 1.21.0
+
+IMPORTANT: Unfortunatlly, latest version of the Intel® oneAPI DPC++/C++
+Compiler (2023.2.1), has a bug that doesn't allow Embree to run correctly with
+ISAs >= AVX2. Please wait for 2024.0.0, which will be released soon after
+Embree 4.3.0.
 
 To compile Embree for AVX-512 you have to use the Intel® Compiler.
 
@@ -334,7 +361,7 @@ The "oneAPI DPC++ Compiler" is more up-to-date than the "Intel(R) oneAPI
 DPC++/C++ Compiler" but less stable. The current tested version of the oneAPI
 DPC++ compiler is
 
-  - [oneAPI DPC++ Compiler 2023-10-26](https://github.com/intel/llvm/releases/tag/nightly-2023-10-26)
+  - [oneAPI DPC++ Compiler 2023-09-22](https://github.com/intel/llvm/releases/tag/nightly-2023-09-22)
 
 Download and unpack the archive and open the "x64 Native Tools Command Prompt"
 of Visual Studio and execute the following lines to properly configure the
@@ -375,11 +402,16 @@ Alternatively, you can download and run the installer of the
 
  - [Intel(R) oneAPI DPC++/C++ Compiler](https://www.intel.com/content/www/us/en/developer/articles/tool/oneapi-standalone-components.html#dpcpp-cpp).
 
+IMPORTANT: Currently only the latest version of this compiler can be found
+(2023.2.1), which unfornunatelly has a bug that doesn't allow Embree to run
+correctly with ISAs >= AVX2. Please wait for 2024.0.0, which will be released
+soon after Embree 4.3.0.
+
 After installation, you can either open a regular `Command Prompt` and execute
 the `vars.bat` script in the `env` directory of the compiler install directory,
 for example
 
-    C:\Program Files (x86)\Intel\oneAPI\compiler\latest\env\vars.bat
+    C:\Program Files (x86)\Intel\oneAPI\compiler\2023.0.0\env\vars.bat
 
 or simply open the installed "Intel oneAPI command prompt for Intel 64 for Visual Studio".
 

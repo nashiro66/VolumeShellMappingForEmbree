@@ -42,7 +42,7 @@ namespace embree
     {
       /* load default scene if none specified */
       if (scene_empty_post_parse()) {
-        FileName file = FileName::executableFolder() + FileName("models/cornell_box.ecs");
+        FileName file = FileName::executableFolder() + FileName("models/box/shellBox.ecs");
         parseCommandLine(new ParseStream(new LineCommentFilter(file, "#")), file.path());
       }
     }

@@ -124,6 +124,7 @@ namespace embree
     std::vector<Crease> ec;
 
     std::vector<std::vector<Vertex> > curGroup;
+    std::vector<std::vector<Vertex> > candidateGroup;
     std::vector<avector<Vec3ff> > curGroupHair;
 
     /*! Material handling. */
@@ -141,7 +142,7 @@ namespace embree
     void flushTriGroup();
     void flushHairGroup();
     Vertex getUInt3(const char*& token);
-    uint32_t getVertex(std::map<Vertex,uint32_t>& vertexMap, Ref<SceneGraph::TriangleMeshNode> mesh, const Vertex& i);
+    uint32_t getVertex(std::map<Vertex,uint32_t>& vertexMap, Ref<SceneGraph::PrismMeshNode> mesh, const Vertex& i);
     std::shared_ptr<Texture> loadTexture(const FileName& fname);
   };
 
@@ -194,12 +195,13 @@ namespace embree
         parseSep(token += 1);
 
         std::vector<Vertex> face;
+
         while (token[0]) {
 	  Vertex vtx = getUInt3(token);
           face.push_back(vtx);
           parseSepOpt(token);
         }
-        curGroup.push_back(face);
+        candidateGroup.push_back(face);
         continue;
       }
 
@@ -271,6 +273,17 @@ namespace embree
 
       // ignore unknown stuff
     }
+
+    for (int i = 0; i < candidateGroup.size() / 2; i+=2)
+    {
+      // add offset face
+      curGroup.push_back(candidateGroup[i]);
+      curGroup.push_back(candidateGroup[i + 1]);
+      curGroup.push_back(candidateGroup[i + candidateGroup.size() / 2]);
+      curGroup.push_back(candidateGroup[i + 1 + candidateGroup.size() / 2]);
+      flushFaceGroup();
+    }
+
     flushFaceGroup();
 
     cin.close();
@@ -523,27 +536,27 @@ namespace embree
     return(v);
   }
 
-  uint32_t OBJLoader::getVertex(std::map<Vertex,uint32_t>& vertexMap, Ref<SceneGraph::TriangleMeshNode> mesh, const Vertex& i)
+  uint32_t OBJLoader::getVertex(std::map<Vertex,uint32_t>& vertexMap, Ref<SceneGraph::PrismMeshNode> mesh, const Vertex& i)
   {
     const std::map<Vertex, uint32_t>::iterator& entry = vertexMap.find(i);
     if (entry != vertexMap.end()) return(entry->second);
     
     if (i.v >= v.size()) std::cout << "WARNING: corrupted OBJ file" << std::endl;
-    else mesh->positions[0].push_back(v[i.v]);
+    else mesh->positions.push_back(v[i.v]);
       
     if (i.vn != -1) {
-      while (mesh->normals[0].size() < mesh->positions[0].size()) mesh->normals[0].push_back(zero); // some vertices might not had a normal
+      while (mesh->normals.size() < mesh->positions.size()) mesh->normals.push_back(zero); // some vertices might not had a normal
 
       if (i.vn >= vn.size()) std::cout << "WARNING: corrupted OBJ file" << std::endl;
-      else mesh->normals[0][mesh->positions[0].size()-1] = vn[i.vn];
+      else mesh->normals[mesh->positions.size()-1] = vn[i.vn];
     }
     if (i.vt != -1) {
-      while (mesh->texcoords.size() < mesh->positions[0].size()) mesh->texcoords.push_back(zero); // some vertices might not had a texture coordinate
+      while (mesh->texcoords.size() < mesh->positions.size()) mesh->texcoords.push_back(zero); // some vertices might not had a texture coordinate
 
       if (i.vt >= vt.size()) std::cout << "WARNING: corrupted OBJ file" << std::endl;
-      else mesh->texcoords[mesh->positions[0].size()-1] = vt[i.vt];
+      else mesh->texcoords[mesh->positions.size()-1] = vt[i.vt];
     }
-    return (vertexMap[i] = (unsigned int)(mesh->positions[0].size()) - 1);
+    return (vertexMap[i] = (unsigned int)(mesh->positions.size()) - 1);
   }
 
   void OBJLoader::flushFaceGroup()
@@ -586,7 +599,7 @@ namespace embree
     }
     else
     {
-      Ref<SceneGraph::TriangleMeshNode> mesh = new SceneGraph::TriangleMeshNode(curMaterial,BBox1f(0,1),1);
+      Ref<SceneGraph::PrismMeshNode> mesh = new SceneGraph::PrismMeshNode(curMaterial);
       mesh->normals.resize(1);
       group->add(mesh.cast<SceneGraph::Node>());
       // merge three indices into one
@@ -608,14 +621,14 @@ namespace embree
           assert(v0 < mesh->numVertices());
           assert(v1 < mesh->numVertices());
           assert(v2 < mesh->numVertices());
-          mesh->triangles.push_back(SceneGraph::TriangleMeshNode::Triangle(v0,v1,v2));
+          mesh->triangles.push_back(SceneGraph::PrismMeshNode::Triangle(v0,v1,v2));
         }
       }
       /* there may be vertices without normals or texture coordinates, thus we have to make these arrays the same size here */
-      if (mesh->normals[0].size()) while (mesh->normals[0].size() < mesh->numVertices()) mesh->normals[0].push_back(zero);
+      if (mesh->normals.size()) while (mesh->normals.size() < mesh->numVertices()) mesh->normals.push_back(zero);
       if (mesh->texcoords.size()) while (mesh->texcoords.size() < mesh->numVertices()) mesh->texcoords.push_back(zero);
 
-      if (mesh->normals[0].size() == 0)
+      if (mesh->normals.size() == 0)
         mesh->normals.clear();
       mesh->verify();
     }

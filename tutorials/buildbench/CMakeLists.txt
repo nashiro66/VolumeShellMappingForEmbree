@@ -4,4 +4,3 @@
 SET(EMBREE_ISPC_SUPPORT OFF)
 INCLUDE(tutorial)
 ADD_TUTORIAL(buildbench)
-ADD_TUTORIAL_SYCL(buildbench)

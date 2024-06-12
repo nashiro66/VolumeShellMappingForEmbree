@@ -938,7 +938,8 @@ namespace embree
     
     double render_dt = avg_render_time.get();
     double render_fps = render_dt != 0.0 ? 1.0f/render_dt : 0.0;
-    ImGui::Text("Render: %3.2f fps",render_fps);
+    ImGui::Text("Render time: %3.2f fps",render_fps);
+    printf("Render time: %f s\n", render_dt); // •b
 
     double total_dt = avg_frame_time.get();
     double total_fps = total_dt != 0.0 ? 1.0f/total_dt : 0.0;
@@ -1213,6 +1214,53 @@ namespace embree
           scene->add(SceneGraph::load(file));
       }
     }
+
+    /* load volume data */
+      /* initialize OpenVDB */
+    openvdb::initialize();
+    openvdb::Grid<openvdb::tree::Tree4<bool, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<float, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<double, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<int32_t, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<int64_t, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec2i, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec2s, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec2d, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec3i, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec3f, 4, 3, 3>::Type>::registerGrid();
+    openvdb::Grid<openvdb::tree::Tree4<openvdb::Vec3d, 4, 3, 3>::Type>::registerGrid();
+
+    FileName volumeFile = FileName::executableFolder() + FileName("models/volume/fire50.vdb");
+    openvdb::io::File file(volumeFile.str());
+    std::string version;
+    openvdb::GridPtrVecPtr grids;
+    openvdb::MetaMap::Ptr meta;
+    file.open();
+    grids = file.getGrids();
+    meta = file.getMetadata();
+    version = file.version();
+    file.close();
+
+    std::cout << "VDB version: " << version << "\n";
+    if (meta) {
+      std::string str = meta->str();
+      if (!str.empty()) std::cout << str << "\n";
+    }
+    std::cout << "\n";
+
+    bool firstGrid = true;
+    for (openvdb::GridPtrVec::const_iterator it = grids->begin(); it != grids->end(); ++it) {
+      if (openvdb::GridBase::ConstPtr grid = *it) {
+        if (!firstGrid) std::cout << "\n\n";
+        std::cout << "Name: " << grid->getName() << std::endl;
+        grid->print(std::cout, /*verboseLevel=*/11);
+
+        obj_scene.gridPtr = grid;
+        firstGrid = false;
+      }
+    }
+
+
 
     Application::instance->log(1,"loading scene done");
 

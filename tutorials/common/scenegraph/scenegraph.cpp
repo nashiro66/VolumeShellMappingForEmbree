@@ -117,7 +117,11 @@ namespace embree
   void SceneGraph::GridMeshNode::print(std::ostream& cout, int depth) {
     cout << "GridMeshNode @ " << this << " { closed = " << closed << " }" << std::endl;
   }
-    
+
+  void SceneGraph::PrismMeshNode::print(std::ostream& cout, int depth) {
+    cout << "PrismMeshNode @ " << this << " { closed = " << closed << " }" << std::endl;
+  }
+
   void SceneGraph::Node::calculateStatistics(Statistics& stat) {
     indegree++;
   }
@@ -201,7 +205,6 @@ namespace embree
     }
   }
 
-
   void SceneGraph::GridMeshNode::calculateStatistics(Statistics& stat)
   {
     indegree++;
@@ -209,6 +212,17 @@ namespace embree
       stat.numGridMeshNodes++;
       stat.numGrids += numPrimitives();
       stat.numGridBytes += numBytes();
+      material->calculateStatistics(stat);
+    }
+  }
+
+  void SceneGraph::PrismMeshNode::calculateStatistics(Statistics& stat)
+  {
+    indegree++;
+    if (indegree == 1) {
+      stat.numTriangleMeshes++;
+      stat.numTriangles += numPrimitives();
+      stat.numTriangleBytes += numBytes();
       material->calculateStatistics(stat);
     }
   }
@@ -326,6 +340,13 @@ namespace embree
   {
     indegree++;
     if (indegree == 1) 
+      material->calculateInDegree();
+  }
+
+  void SceneGraph::PrismMeshNode::calculateInDegree()
+  {
+    indegree++;
+    if (indegree == 1)
       material->calculateInDegree();
   }
 
@@ -472,8 +493,15 @@ namespace embree
     indegree--;
   }
 
-
   void SceneGraph::GridMeshNode::resetInDegree()
+  {
+    closed = false;
+    if (indegree == 1)
+      material->resetInDegree();
+    indegree--;
+  }
+
+  void SceneGraph::PrismMeshNode::resetInDegree()
   {
     closed = false;
     if (indegree == 1)
@@ -686,6 +714,22 @@ namespace embree
     {
       if (normals.size())
         THROW_RUNTIME_ERROR("normal array not supported for this geometry type");
+    }
+  }
+
+  void SceneGraph::PrismMeshNode::verify() const
+  {
+    const size_t N = numVertices();
+    if (normals.size() && normals.size() != positions.size())
+      THROW_RUNTIME_ERROR("incompatible number of time steps");
+    if (positions.size() != N)
+        THROW_RUNTIME_ERROR("incompatible vertex array sizes");
+    if (normals.size() && normals.size() != N)
+        THROW_RUNTIME_ERROR("incompatible vertex array sizes");
+    if (texcoords.size() && texcoords.size() != N) THROW_RUNTIME_ERROR("incompatible vertex array sizes");
+    for (auto& tri : triangles) {
+      if (size_t(tri.v0) >= N || size_t(tri.v1) >= N || size_t(tri.v2) >= N)
+        THROW_RUNTIME_ERROR("invalid triangle");
     }
   }
 
@@ -2005,6 +2049,9 @@ namespace embree
       }
       else if (Ref<SceneGraph::PointSetNode> mesh = node.dynamicCast<SceneGraph::PointSetNode>()) {
         group.push_back(new SceneGraph::PointSetNode(mesh,spaces));
+      }
+      else if (Ref<SceneGraph::PrismMeshNode> mesh = node.dynamicCast<SceneGraph::PrismMeshNode>()) {
+        group.push_back(new SceneGraph::PrismMeshNode(mesh));
       }
     }
 

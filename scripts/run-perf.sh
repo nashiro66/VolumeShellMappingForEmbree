@@ -18,8 +18,8 @@ ecs_files=($(find $models_dir -name "*.ecs"))
 
 # config
 resolution="2048 2048"
-cpubench="1 8"
-gpubench="5 20"
+cpubench="3"
+gpubench="20 10"
 
 if [ "$1" != "gpu" ]; then
   echo "VIEWER CPU"

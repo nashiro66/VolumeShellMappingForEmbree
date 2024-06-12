@@ -1,0 +1,4 @@
+-i shellTorus.obj
+-pointlight 60 40 0 1 1 1
+-ambientlight 0.4 0.4 0.4
+-vp 0 70 150 -vi 0 0 0 -vu 0 1 0 -fov 45

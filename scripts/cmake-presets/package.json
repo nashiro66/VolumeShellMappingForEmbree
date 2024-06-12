@@ -10,7 +10,6 @@
     {
       "name": "package",
       "hidden": true,
-      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "EMBREE_TESTING_INSTALL_TESTS": "ON",
@@ -20,7 +19,6 @@
         "EMBREE_ZIP_MODE": "ON",
         "EMBREE_INSTALL_DEPENDENCIES": "ON",
         "EMBREE_BUILD_GLFW_FROM_SOURCE": "ON",
-        "EMBREE_PATCH_GLFW_SOURCE": "ON",
         "CMAKE_INSTALL_INCLUDEDIR": "include",
         "CMAKE_INSTALL_LIBDIR": "lib",
         "CMAKE_INSTALL_DOCDIR": "doc",
@@ -62,15 +60,6 @@
       "inherits": ["package", "macos"],
       "cacheVariables": {
         "CMAKE_SKIP_INSTALL_RPATH": "OFF",
-        "CMAKE_MACOSX_RPATH": "ON"
-      }
-    },
-    {
-      "name": "package-macos-signed",
-      "hidden": true,
-      "inherits": ["package", "macos"],
-      "cacheVariables": {
-        "CMAKE_SKIP_INSTALL_RPATH": "OFF",
         "CMAKE_MACOSX_RPATH": "ON",
         "EMBREE_SIGN_FILE": "$env{SIGN_FILE_MAC}"
       }
@@ -85,6 +74,8 @@
         "EMBREE_SIGN_FILE": "$env{SIGN_FILE_MAC}"
       }
     },
+
+
     {
       "name": "package-windows",
       "hidden": true,

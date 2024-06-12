@@ -3,11 +3,108 @@
 
 #include "scene_device.h"
 #include "application.h"
-
 #define FIXED_EDGE_TESSELLATION_VALUE 4
 
 namespace embree
 {
+  class HDDA
+  {
+  public:
+
+    HDDA(const openvdb::Vec3d uvw, const openvdb::Vec3d ray_dir, int dim, float startT, float endT)
+    {
+      assert(startT <= endT);
+      _dim = dim;
+      _t = startT;
+      _tEnd = endT;
+      _inv = 1.0f / ray_dir;
+      _voxel[0] = openvdb::math::RoundDown(uvw[0]);
+      _voxel[1] = openvdb::math::RoundDown(uvw[1]);
+      _voxel[2] = openvdb::math::RoundDown(uvw[2]);
+      _voxel = _voxel & ~(dim - 1);
+
+      for (int axis = 0; axis < 3; ++axis) {
+        if (ray_dir[axis] == 0.0f)
+        {
+          _next[axis] = 1e7f;
+          _step[axis] = 0;
+        }
+        else if (ray_dir[axis] > 0)
+        {
+          _step[axis] = 1;
+          _next[axis] = _t + (_voxel[axis] + dim - uvw[axis]) * _inv[axis];
+          _delta[axis] = _inv[axis];
+        }
+        else {
+          _step[axis] = -1;
+          _next[axis] = _t + (_voxel[axis] - uvw[axis]) * _inv[axis];
+          _delta[axis] = -_inv[axis];
+        }
+      }
+    }
+
+    void update(const openvdb::Vec3d ijk, int dim)
+    {
+      if (_dim == dim)
+      {
+        return;
+      }
+      _voxel[0] = openvdb::math::RoundDown(ijk[0]);
+      _voxel[1] = openvdb::math::RoundDown(ijk[1]);
+      _voxel[2] = openvdb::math::RoundDown(ijk[2]);
+      _voxel = _voxel & ~(dim - 1);
+      _dim = dim;
+      for (int axis = 0; axis < 3; axis++)
+      {
+        if (_step[axis] == 0.0f)
+        {
+          continue;
+        }
+        else if (_step[axis] < 0.0f)
+        {
+          _next[axis] = _t + (_voxel[axis] - ijk[axis]) * _inv[axis];
+        }
+        else
+        {
+          _next[axis] = _t + (_voxel[axis] - ijk[axis] + dim) * _inv[axis];
+        }
+      }
+    }
+
+    bool step()
+    {
+
+      int axis = 2;
+      if (_next[0] < _next[1] && _next[0] < _next[2])
+      {
+        axis = 0;
+      }
+      else if (_next[1] < _next[2])
+      {
+        axis = 1;
+      }
+      else
+      {
+        axis = 2;
+      }
+      _t = _next[axis];
+      _next[axis] += _dim * _delta[axis];
+      _voxel[axis] += _dim * _step[axis];
+      return _t <= _tEnd;
+    }
+
+    float getT() const { return _t; }
+    openvdb::Coord getVoxel() const { return _voxel; }
+
+  private:
+
+    int _dim = 0;
+    double _t, _tEnd;
+    openvdb::Coord _voxel, _step;
+    openvdb::Vec3d _inv, _next, _delta;
+  };
+
+
   RTCFeatureFlags operator |= (RTCFeatureFlags& a, RTCFeatureFlags b) {
     return a = (RTCFeatureFlags) (a | b);
   }
@@ -85,6 +182,7 @@ namespace embree
     case CURVES: delete (ISPCHairSet*) geom; break;
     case GRID_MESH: delete (ISPCGridMesh*) geom; break;
     case POINTS: delete (ISPCPointSet*) geom; break;
+    case PRISM: delete (ISPCPrism*) geom; break;
     default: assert(false); break;
     }
   }
@@ -673,6 +771,534 @@ namespace embree
     rtcCommitGeometry(g);
   }
 
+  void prismBoundsFunc(const struct RTCBoundsFunctionArguments* args)
+  {
+    const ISPCPrism* prisms = (const ISPCPrism*)args->geometryUserPtr;
+    RTCBounds* bounds_o = args->bounds_o;
+    const ISPCPrism& prism = prisms[args->primID];
+
+    // get the bounds of the prism
+    for (size_t i = 0; i < 6; i++)
+    {
+      const Vec3fa& v = prism.positions[i];
+      bounds_o->lower_x = min(bounds_o->lower_x, v.x);
+      bounds_o->lower_y = min(bounds_o->lower_y, v.y);
+      bounds_o->lower_z = min(bounds_o->lower_z, v.z);
+      bounds_o->upper_x = max(bounds_o->upper_x, v.x);
+      bounds_o->upper_y = max(bounds_o->upper_y, v.y);
+      bounds_o->upper_z = max(bounds_o->upper_z, v.z);
+    }
+  }
+
+  bool judgeTriangleIntersection(Vec3f judgedTriangle[3], Vec3f ray_orig, Vec3f ray_dir, float& t)
+  {
+    Vec3f n = normalize(cross(judgedTriangle[1] - judgedTriangle[0], judgedTriangle[2] - judgedTriangle[0]));
+    t = dot(judgedTriangle[0] - ray_orig, n) / dot(ray_dir, n);
+    Vec3f I = ray_orig + t * ray_dir;
+    // judge if the intersect point is in the triangle
+    if ((dot(cross(judgedTriangle[1] - judgedTriangle[0], I - judgedTriangle[0]), n) >= 0.0f &&
+      dot(cross(judgedTriangle[2] - judgedTriangle[1], I - judgedTriangle[1]), n) >= 0.0f &&
+      dot(cross(judgedTriangle[0] - judgedTriangle[2], I - judgedTriangle[2]), n) >= 0.0f) ||
+      (dot(cross(judgedTriangle[1] - judgedTriangle[0], I - judgedTriangle[0]), n) <= 0.0f &&
+        dot(cross(judgedTriangle[2] - judgedTriangle[1], I - judgedTriangle[1]), n) <= 0.0f &&
+        dot(cross(judgedTriangle[0] - judgedTriangle[2], I - judgedTriangle[2]), n) <= 0.0f))
+    {
+      return true;
+    }
+    return false;
+  }
+
+  bool judgeTetrahedronIntersection(Vec3f tetrahedron[4], Vec3fa ray_orig, Vec3fa ray_dir, float& tStart, float& tEnd)
+  {
+    Vec3f triangle[3];
+    bool intersected = false;
+    float t;
+
+    // triangle 0 1 2
+    for (int i = 0; i < 3; i++)
+    {
+      triangle[i] = Vec3f(tetrahedron[i].x, tetrahedron[i].y, tetrahedron[i].z);
+    }
+    if (judgeTriangleIntersection(triangle, ray_orig, ray_dir, t))
+    {
+      if (!intersected)
+      {
+        tStart = t;
+        intersected = true;
+      }
+      else
+      {
+        tEnd = t;
+        if (tEnd < tStart)
+        {
+          std::swap(tStart, tEnd);
+        }
+        return true;
+      }
+    }
+
+    // triangle 0 1 3
+    triangle[2] = Vec3f(tetrahedron[3].x, tetrahedron[3].y, tetrahedron[3].z);
+    if (judgeTriangleIntersection(triangle, ray_orig, ray_dir, t))
+    {
+      if (!intersected)
+      {
+        tStart = t;
+        intersected = true;
+      }
+      else
+      {
+        tEnd = t;
+        if (tEnd < tStart)
+        {
+          std::swap(tStart, tEnd);
+        }
+        return true;
+      }
+    }
+
+    // triangle 0 2 3
+    triangle[1] = Vec3f(tetrahedron[2].x, tetrahedron[2].y, tetrahedron[2].z);
+    if (judgeTriangleIntersection(triangle, ray_orig, ray_dir, t))
+    {
+      if (!intersected)
+      {
+        tStart = t;
+        intersected = true;
+      }
+      else
+      {
+        tEnd = t;
+        if (tEnd < tStart)
+        {
+          std::swap(tStart, tEnd);
+        }
+        return true;
+      }
+    }
+
+    // triangle 1 2 3
+    triangle[0] = Vec3f(tetrahedron[1].x, tetrahedron[1].y, tetrahedron[1].z);
+    if (judgeTriangleIntersection(triangle, ray_orig, ray_dir, t))
+    {
+      if (!intersected)
+      {
+        tStart = t;
+        intersected = true;
+      }
+      else
+      {
+        tEnd = t;
+        if (tEnd < tStart)
+        {
+          std::swap(tStart, tEnd);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  inline int getDim(bool isVoxel)
+  {
+    if (isVoxel)
+    {
+      return 1;
+    }
+    else
+    {
+      return 8;
+    }
+  }
+
+  void getUV(Vec3f p, Vec3f tetrahedron[4], openvdb::Vec3d ABCD[4], openvdb::Vec3d& uv)
+  {
+    // get barycentric coordinates
+    const Vec3f vap = p - tetrahedron[0];
+    const Vec3f vbp = p - tetrahedron[1];
+    const Vec3f vab = tetrahedron[1] - tetrahedron[0];
+    const Vec3f vac = tetrahedron[2] - tetrahedron[0];
+    const Vec3f vad = tetrahedron[3] - tetrahedron[0];
+    const Vec3f vbc = tetrahedron[2] - tetrahedron[1];
+    const Vec3f vbd = tetrahedron[3] - tetrahedron[1];
+
+    const float va6 = dot(cross(vbp, vbd), vbc);
+    const float vb6 = dot(cross(vap, vac), vad);
+    const float vc6 = dot(cross(vap, vad), vab);
+    const float vd6 = dot(cross(vap, vab), vac);
+    const float v6 = 1.0f / dot(vab, cross(vac, vad));
+    Vec4f barycentric = Vec4f(va6 * v6, vb6 * v6, vc6 * v6, vd6 * v6);
+    uv = barycentric.x * ABCD[0] + barycentric.y * ABCD[1] + barycentric.z * ABCD[2] + barycentric.w * ABCD[3];
+  }
+
+  float transmittanceHDDA(
+    float tStart, float tEnd,
+    openvdb::FloatGrid::ConstPtr floatGridPtr,
+    openvdb::FloatGrid::ConstAccessor* acc, float opacity,
+    Vec3ff ray_orig, Vec3ff ray_dir, Vec3f tetrahedron[4], int color)
+  {
+    // get texture coordinates
+    float uLen = 54.5f;
+    float vLen = 50.5f;
+    float wLen = 104.0f;
+    openvdb::Vec3d uvCenter(-2.0f, -24.0f, -128.0f);
+    openvdb::Vec3d ABCD[4];
+    for (int i = 0; i < 4; i++)
+    {
+      ABCD[i] = openvdb::Vec3f(0.0f, 0.0f, 0.0f);
+    }
+
+    if (color == 1)
+    {
+      // light blue
+      ABCD[0] = uvCenter + openvdb::Vec3f(uLen, -vLen, 0.0f);
+      ABCD[1] = uvCenter + openvdb::Vec3f(-uLen, -vLen, 0.0f);
+      ABCD[2] = uvCenter + openvdb::Vec3f(-uLen, vLen, 0.0f);
+      ABCD[3] = uvCenter + openvdb::Vec3f(-uLen, -vLen, wLen);
+    }
+    else if (color == 2)
+    {
+      // light green
+      ABCD[0] = uvCenter + openvdb::Vec3f(uLen, -vLen, wLen);
+      ABCD[1] = uvCenter + openvdb::Vec3f(-uLen, vLen, wLen);
+      ABCD[2] = uvCenter + openvdb::Vec3f(-uLen, -vLen, wLen);
+      ABCD[3] = uvCenter + openvdb::Vec3f(-uLen, vLen, 0.0f);
+    }
+    else if (color == 3)
+    {
+      // light red
+      ABCD[0] = uvCenter + openvdb::Vec3f(-uLen, -vLen, wLen);
+      ABCD[1] = uvCenter + openvdb::Vec3f(uLen, -vLen, wLen);
+      ABCD[2] = uvCenter + openvdb::Vec3f(uLen, -vLen, 0.0f);
+      ABCD[3] = uvCenter + openvdb::Vec3f(-uLen, vLen, 0.0f);
+    }
+    else if (color == 4)
+    {
+      // another tetrahedron
+      // light blue
+      ABCD[0] = uvCenter + openvdb::Vec3f(uLen, -vLen, 0.0f);
+      ABCD[1] = uvCenter + openvdb::Vec3f(uLen, vLen, 0.0f);
+      ABCD[2] = uvCenter + openvdb::Vec3f(-uLen, vLen, 0.0f);
+      ABCD[3] = uvCenter + openvdb::Vec3f(uLen, vLen, wLen);
+    }
+    else if (color == 5)
+    {
+      // light green
+      ABCD[0] = uvCenter + openvdb::Vec3f(uLen, -vLen, wLen);
+      ABCD[1] = uvCenter + openvdb::Vec3f(-uLen, vLen, wLen);
+      ABCD[2] = uvCenter + openvdb::Vec3f(uLen, vLen, wLen);
+      ABCD[3] = uvCenter + openvdb::Vec3f(uLen, vLen, 0.0f);
+    }
+    else if (color == 6)
+    {
+      // light red
+      ABCD[0] = uvCenter + openvdb::Vec3f(uLen, vLen, wLen);
+      ABCD[1] = uvCenter + openvdb::Vec3f(uLen, -vLen, wLen);
+      ABCD[2] = uvCenter + openvdb::Vec3f(uLen, -vLen, 0.0f);
+      ABCD[3] = uvCenter + openvdb::Vec3f(-uLen, vLen, 0.0f);
+    }
+    openvdb::math::Ray<float> worldRay(reinterpret_cast<const openvdb::Vec3f&>(ray_orig),
+      reinterpret_cast<const openvdb::Vec3f&>(ray_dir), tStart, tEnd);
+    auto pStart = Vec3f(worldRay(tStart)[0], worldRay(tStart)[1], worldRay(tStart)[2]);
+    openvdb::Vec3d uvwStart(0.0f, 0.0f, 0.0f);
+    getUV(pStart, tetrahedron, ABCD, uvwStart);
+    auto pEnd = Vec3f(worldRay(tEnd)[0], worldRay(tEnd)[1], worldRay(tEnd)[2]);
+    openvdb::Vec3d uvwEnd(0.0f, 0.0f, 0.0f);
+    getUV(pEnd, tetrahedron, ABCD, uvwEnd);
+
+    // ray in world space
+    uvwStart = floatGridPtr->worldToIndex(uvwStart);
+    uvwEnd = floatGridPtr->worldToIndex(uvwEnd);
+    double len = (uvwEnd - uvwStart).length();
+
+    openvdb::Coord ijk;
+    ijk[0] = openvdb::math::Floor(uvwStart[0]);
+    ijk[1] = openvdb::math::Floor(uvwStart[1]);
+    ijk[2] = openvdb::math::Floor(uvwStart[2]);
+
+    openvdb::Vec3d ray_dir_local = (uvwEnd - uvwStart) / len;
+    bool isVoxel = acc->isVoxel(ijk);
+    int dim = getDim(isVoxel);
+    HDDA hdda(uvwStart, ray_dir_local, dim, 0.0f, len);
+
+    float transmittance = 1.f;
+    float t = 0.0f;
+    float tPrev;
+    float density = acc->getValue(ijk) * opacity;
+
+    int count = 0;
+    openvdb::Vec3d uvwCurrent(0.0f, 0.0f, 0.0f);
+    while (hdda.step() && count < 1000)
+    {
+      tPrev = t;
+      t = hdda.getT();
+      float dt = t - tPrev;
+      transmittance *= expf(-density * dt);
+      ijk = hdda.getVoxel();
+      density = acc->getValue(ijk) * opacity;
+      isVoxel = acc->isVoxel(ijk);
+      dim = getDim(isVoxel);
+      uvwCurrent = uvwStart + ray_dir_local * t;
+      hdda.update(uvwCurrent, dim);
+      count++;
+    }
+    return transmittance;
+  }
+
+  void calculateColor(
+    ::Ray* ray, 
+    Vec3f tetrahedron[4],
+    float& tStart, float& tEnd, int color, 
+    openvdb::FloatGrid::ConstPtr floatGridPtr, 
+    openvdb::FloatGrid::ConstAccessor* acc)
+  {
+    Vec3ff ray_orig = ray->org;
+    Vec3ff ray_dir = ray->dir;
+    float alpha = 0.0f;
+    float dot0;
+    float dot1;
+    float dot2;
+    if (3 < color)
+    {
+      dot0 = dot(tetrahedron[3] - tetrahedron[0], tetrahedron[2] - tetrahedron[0]);
+      dot1 = dot(tetrahedron[0] - tetrahedron[3], tetrahedron[2] - tetrahedron[3]);
+      dot2 = dot(tetrahedron[0] - tetrahedron[2], tetrahedron[3] - tetrahedron[2]);
+
+      // the 3 must be the largest angle.
+      if (abs(dot0) <= abs(dot1) && abs(dot0) <= abs(dot2))
+      {
+        // 0 is largest
+        auto tmp = tetrahedron[0];
+        tetrahedron[0] = tetrahedron[3];
+        tetrahedron[3] = tmp;
+      }
+      else if (abs(dot2) <= abs(dot1))
+      {
+        // 2 is largest
+        auto tmp = tetrahedron[2];
+        tetrahedron[2] = tetrahedron[3];
+        tetrahedron[3] = tmp;
+      }
+    }
+    else
+    {
+      dot0 = dot(tetrahedron[1] - tetrahedron[0], tetrahedron[2] - tetrahedron[0]);
+      dot1 = dot(tetrahedron[0] - tetrahedron[1], tetrahedron[2] - tetrahedron[1]);
+      dot2 = dot(tetrahedron[0] - tetrahedron[2], tetrahedron[1] - tetrahedron[2]);
+
+      // the 1 must be the largest angle.
+      if (abs(dot0) <= abs(dot1) && abs(dot0) <= abs(dot2))
+      {
+        // 0 is largest
+        auto tmp = tetrahedron[0];
+        tetrahedron[0] = tetrahedron[1];
+        tetrahedron[1] = tmp;
+      }
+      else if (abs(dot2) <= abs(dot1))
+      {
+        // 2 is largest
+        auto tmp = tetrahedron[2];
+        tetrahedron[2] = tetrahedron[1];
+        tetrahedron[1] = tmp;
+      }
+    }
+    ray->colors[ray->tail].x = 1.0f;
+    ray->colors[ray->tail].y = 1.0f;
+    ray->colors[ray->tail].z = 1.0f;
+    //if(color==1)
+    //{
+    //  ray->colors[ray->tail].x = 1.0f;
+    //  ray->colors[ray->tail].y = 1.0f;
+    //  ray->colors[ray->tail].z = 1.0f;
+    //}
+    //else if(color==2)
+    //{
+    //  ray->colors[ray->tail].x = 1.0f;
+    //  ray->colors[ray->tail].y = 0.0f;
+    //  ray->colors[ray->tail].z = 0.0f;
+    //}
+    //else if (color == 3)
+    //{
+    //  ray->colors[ray->tail].x = 1.0f;
+    //  ray->colors[ray->tail].y = 1.0f;
+    //  ray->colors[ray->tail].z = 0.0f;
+    //}
+    //else if (color == 4)
+    //{
+    //  ray->colors[ray->tail].x = 0.0f;
+    //  ray->colors[ray->tail].y = 1.0f;
+    //  ray->colors[ray->tail].z = 0.0f;
+    //}
+    //else if (color == 5)
+    //{
+    //  ray->colors[ray->tail].x = 0.0f;
+    //  ray->colors[ray->tail].y = 1.0f;
+    //  ray->colors[ray->tail].z = 1.0f;
+    //}
+    //else if (color == 6)
+    //{
+    //  ray->colors[ray->tail].x = 0.0f;
+    //  ray->colors[ray->tail].y = 0.0f;
+    //  ray->colors[ray->tail].z = 1.0f;
+    //}
+
+    {
+      const float opacity = 0.05f;
+      alpha = 1.0f - transmittanceHDDA(tStart, tEnd, floatGridPtr, acc, opacity, ray_orig, ray_dir, tetrahedron, color);
+      ray->alpha[ray->tail] = alpha;
+      ray->tfars[ray->tail] = (tStart + tEnd) / 2.0f;
+      ray->tail++;
+    }
+  }
+
+  void judge_prism_intersection(
+    ::Ray* ray,
+    Vec3f baseTriangle[3], Vec3f prismNormals[3],
+    openvdb::FloatGrid::ConstPtr gridPtr, openvdb::FloatGrid::ConstAccessor* acc, 
+    int colorOffset)
+  {
+    Vec3ff ray_orig = ray->org;
+    Vec3ff ray_dir = ray->dir;
+
+    Vec3f offsetTriangle[3];
+    for (int i = 0; i < 3; i++)
+    {
+      offsetTriangle[i] = Vec3f(0.0f);
+      offsetTriangle[i] = baseTriangle[i] + prismNormals[i];
+    }
+
+    Vec3f tetrahedron[4];
+    for (int i = 0; i < 4; i++)
+    {
+      tetrahedron[i] = Vec3f(0.0f, 0.0f, 0.0f);
+    }
+
+    float tStart;
+    float tEnd;
+
+    // intersect judge with tetrahedron1 light blue
+    tetrahedron[0] = baseTriangle[0];
+    tetrahedron[1] = baseTriangle[1];
+    tetrahedron[2] = baseTriangle[2];
+    tetrahedron[3] = offsetTriangle[1];
+    if (judgeTetrahedronIntersection(tetrahedron, ray_orig, ray_dir, tStart, tEnd))
+    {
+      calculateColor(ray, tetrahedron, tStart, tEnd, colorOffset + 1, gridPtr, acc);
+    }
+
+    tetrahedron[0] = offsetTriangle[0];
+    tetrahedron[1] = offsetTriangle[1];
+    tetrahedron[2] = offsetTriangle[2];
+    tetrahedron[3] = baseTriangle[2];
+    if (judgeTetrahedronIntersection(tetrahedron, ray_orig, ray_dir, tStart, tEnd))
+    {
+      calculateColor(ray, tetrahedron,tStart, tEnd, colorOffset + 2, gridPtr, acc);
+    }
+
+    tetrahedron[0] = offsetTriangle[0];
+    tetrahedron[1] = offsetTriangle[1];
+    tetrahedron[2] = baseTriangle[0];
+    tetrahedron[3] = baseTriangle[2];
+    if (judgeTetrahedronIntersection(tetrahedron, ray_orig, ray_dir, tStart, tEnd))
+    {
+      calculateColor(ray, tetrahedron, tStart, tEnd, colorOffset + 3, gridPtr, acc);
+    }
+  }
+
+  void prismIntersectFunc(const RTCIntersectFunctionNArguments* args)
+  {
+    const ISPCPrism* prisms = (const ISPCPrism*)args->geometryUserPtr;
+    const ISPCPrism& prism = prisms[args->primID];
+    ::Ray* ray = (::Ray*)args->rayhit;
+
+    Vec3f baseTriangle[3];
+    baseTriangle[0] = Vec3f(prism.positions[prism.triangles[0].v0]);
+    baseTriangle[1] = Vec3f(prism.positions[prism.triangles[0].v1]);
+    baseTriangle[2] = Vec3f(prism.positions[prism.triangles[0].v2]);
+
+    Vec3f offsetTriangle[3];
+    offsetTriangle[0] = Vec3f(prism.positions[prism.triangles[2].v0]);
+    offsetTriangle[1] = Vec3f(prism.positions[prism.triangles[2].v1]);
+    offsetTriangle[2] = Vec3f(prism.positions[prism.triangles[2].v2]);
+
+    Vec3f prismNormals[3];
+    prismNormals[0] = Vec3f(offsetTriangle[0] - baseTriangle[0]);
+    prismNormals[1] = Vec3f(offsetTriangle[1] - baseTriangle[1]);
+    prismNormals[2] = Vec3f(offsetTriangle[2] - baseTriangle[2]);
+
+    auto acc = prism.floatGridPtr->getAccessor();
+    judge_prism_intersection(ray, baseTriangle, prismNormals, prism.floatGridPtr, &acc,  0);
+
+    baseTriangle[1] = prism.positions[prism.triangles[1].v2];
+    offsetTriangle[1] = prism.positions[prism.triangles[3].v2];
+    prismNormals[1] = offsetTriangle[1] - baseTriangle[1];
+    judge_prism_intersection(ray, baseTriangle, prismNormals, prism.floatGridPtr, &acc,  3);
+
+    ray->geomID = args->geomID;
+  }
+
+  ISPCPrism::ISPCPrism(RTCDevice device, bool hasNormals, bool hasTexcoords)
+    : geom(PRISM),
+    positions(nullptr), normals(nullptr), texcoords(nullptr), triangles(nullptr),
+    numVertices(numVertices), numTriangles(numTriangles), floatGridPtr(nullptr)
+  {
+    geom.geometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_USER);
+
+    positions = (Vec3fa*)alignedUSMMalloc(sizeof(Vec3fa) * numVertices);
+
+    if (hasNormals) {
+      normals = (Vec3fa*)alignedUSMMalloc(sizeof(Vec3fa) * numVertices);
+    }
+
+    if (hasTexcoords)
+      texcoords = (Vec2f*)alignedUSMMalloc(sizeof(Vec2f) * numVertices);
+
+    triangles = (ISPCTriangle*)alignedUSMMalloc(sizeof(ISPCTriangle) * numTriangles);
+  }
+
+  ISPCPrism::ISPCPrism(RTCDevice device, TutorialScene* scene_in, Ref<SceneGraph::PrismMeshNode> in)
+    : geom(PRISM), positions(nullptr), normals(nullptr), texcoords(nullptr), triangles(nullptr), floatGridPtr(nullptr)
+  {
+    geom.geometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_USER);
+
+    positions = copyArrayToUSM(in->positions);
+
+    if (in->normals.size()) {
+      normals = copyArrayToUSM(in->normals);
+    }
+
+    texcoords = copyArrayToUSM(in->texcoords);
+
+    numVertices = (unsigned)in->numVertices();
+    numTriangles = (unsigned)in->numPrimitives();
+    geom.materialID = scene_in->materialID(in->material);
+    triangles = (ISPCTriangle*)copyArrayToUSM(in->triangles);
+    floatGridPtr = openvdb::gridConstPtrCast<openvdb::FloatGrid>(scene_in->gridPtr);
+  }
+
+  ISPCPrism::~ISPCPrism()
+  {
+    if (positions) {
+      alignedUSMFree(positions);
+    }
+
+    if (normals) {
+      alignedUSMFree(normals);
+    }
+
+    alignedUSMFree(texcoords);
+    alignedUSMFree(triangles);
+  }
+
+  void ISPCPrism::commit()
+  {
+    RTCGeometry g = geom.geometry;
+    rtcSetGeometryUserPrimitiveCount(g, 1); // must be 1
+    rtcSetGeometryUserData(g, this);
+    rtcSetGeometryBoundsFunction(g, prismBoundsFunc, nullptr);
+    rtcSetGeometryIntersectFunction(g, prismIntersectFunc);
+    rtcCommitGeometry(g);
+  }
 
   ISPCInstance::ISPCInstance (RTCDevice device, unsigned int numTimeSteps)
     : geom(INSTANCE), child(nullptr), startTime(0.0f), endTime(1.0f), numTimeSteps(numTimeSteps), quaternion(false), spaces(nullptr)
@@ -878,29 +1504,32 @@ namespace embree
   ISPCGeometry* ISPCScene::convertGeometry (RTCDevice device, TutorialScene* scene, Ref<SceneGraph::Node> in)
   {
     ISPCGeometry* geom = nullptr;
-    if (in->geometry)
-      return (ISPCGeometry*) in->geometry;
-    else if (Ref<SceneGraph::TriangleMeshNode> mesh = in.dynamicCast<SceneGraph::TriangleMeshNode>())
-      geom = (ISPCGeometry*) new ISPCTriangleMesh(device,scene,mesh);
-    else if (Ref<SceneGraph::QuadMeshNode> mesh = in.dynamicCast<SceneGraph::QuadMeshNode>())
-      geom = (ISPCGeometry*) new ISPCQuadMesh(device,scene,mesh);
-    else if (Ref<SceneGraph::SubdivMeshNode> mesh = in.dynamicCast<SceneGraph::SubdivMeshNode>())
-      geom = (ISPCGeometry*) new ISPCSubdivMesh(device,scene,mesh);
-    else if (Ref<SceneGraph::HairSetNode> mesh = in.dynamicCast<SceneGraph::HairSetNode>())
-      geom = (ISPCGeometry*) new ISPCHairSet(device,scene,mesh->type,mesh);
-    else if (Ref<SceneGraph::GridMeshNode> mesh = in.dynamicCast<SceneGraph::GridMeshNode>())
-      geom = (ISPCGeometry*) new ISPCGridMesh(device,scene,mesh); 
-    else if (Ref<SceneGraph::TransformNode> mesh = in.dynamicCast<SceneGraph::TransformNode>())
-      geom = (ISPCGeometry*) new ISPCInstance(device,scene,mesh);
-    else if (Ref<SceneGraph::MultiTransformNode> mesh = in.dynamicCast<SceneGraph::MultiTransformNode>()) {
-      geom = (ISPCGeometry*) new ISPCInstanceArray(device,scene,mesh);
-    }
-    else if (Ref<SceneGraph::GroupNode> mesh = in.dynamicCast<SceneGraph::GroupNode>())
-      geom = (ISPCGeometry*) new ISPCGroup(device,scene,mesh);
-    else if (Ref<SceneGraph::PointSetNode> mesh = in.dynamicCast<SceneGraph::PointSetNode>())
-      geom = (ISPCGeometry*) new ISPCPointSet(device,scene, mesh->type, mesh);
-    else
-      THROW_RUNTIME_ERROR("unknown geometry type");
+    Ref<SceneGraph::PrismMeshNode> mesh = in.dynamicCast<SceneGraph::PrismMeshNode>();
+    geom = (ISPCGeometry*) new ISPCPrism(device, scene, mesh);
+
+    //if (in->geometry)
+    //  return (ISPCGeometry*) in->geometry;
+    //else if (Ref<SceneGraph::TriangleMeshNode> mesh = in.dynamicCast<SceneGraph::TriangleMeshNode>())
+    //  geom = (ISPCGeometry*) new ISPCTriangleMesh(device,scene,mesh);
+    //else if (Ref<SceneGraph::QuadMeshNode> mesh = in.dynamicCast<SceneGraph::QuadMeshNode>())
+    //  geom = (ISPCGeometry*) new ISPCQuadMesh(device,scene,mesh);
+    //else if (Ref<SceneGraph::SubdivMeshNode> mesh = in.dynamicCast<SceneGraph::SubdivMeshNode>())
+    //  geom = (ISPCGeometry*) new ISPCSubdivMesh(device,scene,mesh);
+    //else if (Ref<SceneGraph::HairSetNode> mesh = in.dynamicCast<SceneGraph::HairSetNode>())
+    //  geom = (ISPCGeometry*) new ISPCHairSet(device,scene,mesh->type,mesh);
+    //else if (Ref<SceneGraph::GridMeshNode> mesh = in.dynamicCast<SceneGraph::GridMeshNode>())
+    //  geom = (ISPCGeometry*) new ISPCGridMesh(device,scene,mesh); 
+    //else if (Ref<SceneGraph::TransformNode> mesh = in.dynamicCast<SceneGraph::TransformNode>())
+    //  geom = (ISPCGeometry*) new ISPCInstance(device,scene,mesh);
+    //else if (Ref<SceneGraph::MultiTransformNode> mesh = in.dynamicCast<SceneGraph::MultiTransformNode>()) {
+    //  geom = (ISPCGeometry*) new ISPCInstanceArray(device,scene,mesh);
+    //}
+    //else if (Ref<SceneGraph::GroupNode> mesh = in.dynamicCast<SceneGraph::GroupNode>())
+    //  geom = (ISPCGeometry*) new ISPCGroup(device,scene,mesh);
+    //else if (Ref<SceneGraph::PointSetNode> mesh = in.dynamicCast<SceneGraph::PointSetNode>())
+    //  geom = (ISPCGeometry*) new ISPCPointSet(device,scene, mesh->type, mesh);
+    //else
+    //  THROW_RUNTIME_ERROR("unknown geometry type");
 
     in->geometry = geom;
     return geom;
@@ -995,6 +1624,17 @@ namespace embree
     }
     if (mesh->numTimeSteps > 1) used_features |= RTC_FEATURE_FLAG_MOTION_BLUR;
     
+    mesh->geom.visited = true;
+    rtcSetGeometryBuildQuality(mesh->geom.geometry, quality);
+    mesh->commit();
+  }
+
+  void ConvertPrismMesh(RTCDevice device, ISPCPrism* mesh, RTCBuildQuality quality, RTCSceneFlags flags, RTCFeatureFlags& used_features)
+  {
+    if (mesh->geom.visited) return;
+
+    used_features |= RTC_FEATURE_FLAG_USER_GEOMETRY;
+
     mesh->geom.visited = true;
     rtcSetGeometryBuildQuality(mesh->geom.geometry, quality);
     mesh->commit();
@@ -1099,6 +1739,7 @@ namespace embree
     
     for (unsigned int geomID=0; geomID<scene_in->numGeometries; geomID++)
     {
+
       ISPCGeometry* geometry = scene_in->geometries[geomID];
       if (geometry->type == SUBDIV_MESH)
         ConvertSubdivMesh(g_device,(ISPCSubdivMesh*) geometry, quality, flags, used_features);
@@ -1116,6 +1757,8 @@ namespace embree
         ConvertInstance(g_device, (ISPCInstance*) geometry, quality, flags, 0, used_features);
       else if (geometry->type == INSTANCE_ARRAY)
         ConvertInstanceArray(g_device, (ISPCInstanceArray*) geometry, quality, flags, 0, used_features);
+      else if ( geometry->type == PRISM)
+        ConvertPrismMesh(g_device, (ISPCPrism*) geometry, quality, flags, used_features);
       else
         assert(false);
 

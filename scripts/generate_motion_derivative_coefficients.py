@@ -3,9 +3,6 @@
 ## Copyright 2009-2021 Intel Corporation
 ## SPDX-License-Identifier: Apache-2.0
 
-## Used to generate code in kernels/common/motion_derivative.h
-
-
 import sympy as sp
 import numpy as np
 import math

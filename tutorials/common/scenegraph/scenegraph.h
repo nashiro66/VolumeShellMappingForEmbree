@@ -1634,7 +1634,103 @@ namespace embree
       Ref<MaterialNode> material;
     };
 
-    
+    struct PrismMeshNode : public Node
+    {
+      typedef Vec3fa Vertex;
+
+      struct Triangle
+      {
+      public:
+        Triangle() {}
+        Triangle(unsigned v0, unsigned v1, unsigned v2)
+          : v0(v0), v1(v1), v2(v2) {}
+      public:
+        unsigned v0, v1, v2;
+      };
+
+    public:
+      PrismMeshNode(const avector<Vertex>& positions_in,
+        const avector<Vertex>& normals_in,
+        const avector<Vec2f>& texcoords,
+        const avector<Triangle>& triangles,
+        Ref<MaterialNode> material)
+        : Node(true), texcoords(texcoords), triangles(triangles), material(material)
+      {
+        positions = positions_in;
+        normals = normals_in;
+      }
+
+      PrismMeshNode(Ref<MaterialNode> material)
+        : Node(true), material(material)
+      {
+        positions = avector<Vertex>();
+      }
+
+      PrismMeshNode(Ref<SceneGraph::PrismMeshNode> imesh)
+        : Node(true)
+      {
+        positions = imesh->positions;
+        normals = imesh->normals;
+        texcoords = imesh->texcoords;
+        triangles = imesh->triangles;
+        material = imesh->material;
+      }
+
+      virtual void setMaterial(Ref<MaterialNode> material) {
+        this->material = material;
+      }
+
+      virtual BBox3fa bounds() const
+      {
+        BBox3fa b = empty;
+        for (auto& x : positions)
+          b.extend(x);
+        return b;
+      }
+
+      virtual LBBox3fa lbounds() const
+      {
+        avector<BBox3fa> bboxes(positions.size());
+        for (size_t t = 0; t < positions.size(); t++) {
+          BBox3fa b = empty;
+          b.extend(positions[t]);
+          bboxes[t] = b;
+        }
+        return LBBox3fa(bboxes);
+      }
+
+      virtual size_t numPrimitives() const {
+        return triangles.size();
+      }
+
+      size_t numVertices() const {
+        assert(positions.size());
+        return positions.size();
+      }
+
+      size_t numTimeSteps() const {
+        return positions.size();
+      }
+
+      size_t numBytes() const {
+        return numPrimitives() * sizeof(Triangle) + numVertices() * numTimeSteps() * sizeof(Vertex);
+      }
+
+      void verify() const;
+
+      virtual void print(std::ostream& cout, int depth);
+      virtual void calculateStatistics(Statistics& stat);
+      virtual void calculateInDegree();
+      virtual void resetInDegree();
+
+    public:
+      avector<Vertex> positions;
+      avector<Vertex> normals;
+      avector<Vec2f> texcoords;
+      avector<Triangle> triangles;
+      Ref<MaterialNode> material;
+    };
+
     enum InstancingMode { INSTANCING_NONE, INSTANCING_GEOMETRY, INSTANCING_GROUP, INSTANCING_FLATTENED, INSTANCING_MULTI_LEVEL };
     Ref<Node> flatten(Ref<Node> node, InstancingMode mode);
     Ref<GroupNode> flatten(Ref<GroupNode> node, InstancingMode mode);

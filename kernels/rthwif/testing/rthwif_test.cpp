@@ -425,7 +425,7 @@ const Bounds3f xfmBounds(const Transform& m, const Bounds3f& b)
 struct Triangle
 {
   Triangle()
-    : v0(0.f,0.f,0.f), v1(0.f,0.f,0.f), v2(0.f,0.f,0.f), index(0) {}
+    : v0(0,0,0), v1(0,0,0), v2(0,0,0), index(0) {}
   
   Triangle (sycl::float3 v0, sycl::float3 v1, sycl::float3 v2, uint32_t index)
     : v0(v0), v1(v1), v2(v2), index(index) {}
@@ -1400,8 +1400,8 @@ void render(uint32_t i, const TestInput& in, TestOutput& out, intel_raytracing_a
   out.ray0_flags = intel_get_ray_flags(query,0);
   
   /* clear ray data of level N */
-  out.rayN_org = sycl::float3(0.f,0.f,0.f);
-  out.rayN_dir = sycl::float3(0.f,0.f,0.f);
+  out.rayN_org = sycl::float3(0,0,0);
+  out.rayN_dir = sycl::float3(0,0,0);
   out.rayN_tnear = 0.0f;
   out.rayN_mask = 0;
   out.rayN_flags = 0;
@@ -1503,8 +1503,8 @@ void render_loop(uint32_t i, const TestInput& in, TestOutput& out, size_t scene_
   out.ray0_flags = intel_get_ray_flags(query,0);
   
   /* clear ray data of level N */
-  out.rayN_org = sycl::float3(0.f,0.f,0.f);
-  out.rayN_dir = sycl::float3(0.f,0.f,0.f);
+  out.rayN_org = sycl::float3(0,0,0);
+  out.rayN_dir = sycl::float3(0,0,0);
   out.rayN_tnear = 0.0f;
   out.rayN_mask = 0;
   out.rayN_flags = 0;
@@ -1669,9 +1669,9 @@ void render_loop(uint32_t i, const TestInput& in, TestOutput& out, size_t scene_
     out.geomID = intel_get_hit_geometry_id( query, intel_hit_type_committed_hit );
     out.primID = intel_get_hit_primitive_id( query, intel_hit_type_committed_hit );
 
-    out.v0 = sycl::float3(0.f,0.f,0.f);
-    out.v1 = sycl::float3(0.f,0.f,0.f);
-    out.v2 = sycl::float3(0.f,0.f,0.f);
+    out.v0 = sycl::float3(0,0,0);
+    out.v1 = sycl::float3(0,0,0);
+    out.v2 = sycl::float3(0,0,0);
     if (intel_get_hit_candidate( query, intel_hit_type_committed_hit ) == intel_candidate_type_triangle)
     {
       intel_float3 vertex_out[3];
@@ -1728,8 +1728,8 @@ void buildTestExpectedInputAndOutput(std::shared_ptr<Scene> scene, size_t numTes
         const sycl::float3 p = tri.sample(0.1f,0.6f);
         const Transform world_to_local = rcp(hit.local_to_world);
         
-        in[tid].org = p + sycl::float3(0.f,0.f,-1.f);
-        in[tid].dir = sycl::float3(0.f,0.f,1.f);
+        in[tid].org = p + sycl::float3(0,0,-1);
+        in[tid].dir = sycl::float3(0,0,1);
         in[tid].tnear = 0.0f;
         in[tid].tfar = 10000.0f;
         in[tid].mask = 0xFF;
@@ -1790,9 +1790,9 @@ void buildTestExpectedInputAndOutput(std::shared_ptr<Scene> scene, size_t numTes
           }
            
           if (hit.procedural_triangle) {
-            out_expected[tid].v0 = sycl::float3(0.f,0.f,0.f);
-            out_expected[tid].v1 = sycl::float3(0.f,0.f,0.f);
-            out_expected[tid].v2 = sycl::float3(0.f,0.f,0.f);
+            out_expected[tid].v0 = sycl::float3(0,0,0);
+            out_expected[tid].v1 = sycl::float3(0,0,0);
+            out_expected[tid].v2 = sycl::float3(0,0,0);
           } else {
             out_expected[tid].v0 = hit.triangle.v0;
             out_expected[tid].v1 = hit.triangle.v1;
@@ -2050,14 +2050,14 @@ void* allocDispatchGlobals(sycl::device device, sycl::context context)
   return dispatchGlobalsPtr;
 }
 
-int main(int argc, char* argv[]) try
+int main(int argc, char* argv[])
 {
   TestType test = TestType::TRIANGLES_COMMITTED_HIT;
   InstancingType inst = InstancingType::NONE;
   BuildMode buildMode = BuildMode::BUILD_EXPECTED_SIZE;
 
 #if defined(EMBREE_SYCL_L0_RTAS_BUILDER)
-  ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::LEVEL_ZERO;
+  ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::AUTO;
 #else
   ZeWrapper::RTAS_BUILD_MODE rtas_build_mode = ZeWrapper::RTAS_BUILD_MODE::INTERNAL;
 #endif
@@ -2158,13 +2158,8 @@ int main(int argc, char* argv[]) try
   RTCore::SetXeVersion((RTCore::XeVersion)ZE_RAYTRACING_DEVICE);
 #endif
 
-#if TBB_INTERFACE_VERSION >= 11005
   tbb::global_control tbb_threads(tbb::global_control::max_allowed_parallelism,numThreads);
-#else
-  tbb::task_scheduler_init tbb_threads(tbb::task_scheduler_init::deferred);
-  tbb_threads.initialize(int(numThreads));
-#endif
-
+    
   /* initialize SYCL device */
   device = sycl::device(sycl::gpu_selector_v);
   sycl::queue queue = sycl::queue(device,exception_handler);
@@ -2177,7 +2172,6 @@ int main(int argc, char* argv[]) try
   /* execute test */
   RandomSampler_init(rng,0x56FE238A);
 
-  ze_result_t result = ZE_RESULT_SUCCESS;
   sycl::platform platform = device.get_platform();
   ze_driver_handle_t hDriver = sycl::get_native<sycl::backend::ext_oneapi_level_zero>(platform);
 
@@ -2186,7 +2180,7 @@ int main(int argc, char* argv[]) try
   {
     uint32_t count = 0;
     std::vector<ze_driver_extension_properties_t> extensions;
-    result = ZeWrapper::zeDriverGetExtensionProperties(hDriver,&count,extensions.data());
+    ze_result_t result = ZeWrapper::zeDriverGetExtensionProperties(hDriver,&count,extensions.data());
     if (result != ZE_RESULT_SUCCESS)
       throw std::runtime_error("zeDriverGetExtensionProperties failed");
     
@@ -2203,19 +2197,13 @@ int main(int argc, char* argv[]) try
     }
 
     if (ze_rtas_builder)
-      result = ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::AUTO);
+      ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::AUTO);
     else
-      result = ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::INTERNAL);
+      ZeWrapper::initRTASBuilder(hDriver,ZeWrapper::RTAS_BUILD_MODE::INTERNAL);
   }
   else
-    result = ZeWrapper::initRTASBuilder(hDriver,rtas_build_mode);
+    ZeWrapper::initRTASBuilder(hDriver,rtas_build_mode);
 
-  if (result == ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE)
-    throw std::runtime_error("cannot load ZE_experimental_rtas_builder extension");
-  
-  if (result != ZE_RESULT_SUCCESS)
-    throw std::runtime_error("cannot initialize ZE_experimental_rtas_builder extension");
-  
   if (ZeWrapper::rtas_builder == ZeWrapper::INTERNAL)
     std::cout << "using internal RTAS builder" << std::endl;
   else
@@ -2258,10 +2246,6 @@ int main(int argc, char* argv[]) try
 #endif
   
   return numErrors ? 1 : 0;
-}
-catch (std::runtime_error e) {
-  std::cerr << "std::runtime_error: " << e.what() << std::endl;
-  return 1;
 }
 
 #pragma clang diagnostic pop
